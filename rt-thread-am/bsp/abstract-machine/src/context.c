@@ -21,8 +21,13 @@ static Context* ev_handler(Event e, Context *c) {
 		case EVENT_YIELD:{
 			//printf("yield");
 			rt_thread_t pcb = rt_thread_self(); 
-    		rt_ubase_t to = pcb->user_data;
-    		c = *(Context**)to;
+			Context*** to_from =(Context***) pcb->user_data;
+			Context** to = to_from[0];                      
+			Context** from = to_from[1];                    
+			if(from){                                       
+    			*from = c;                                  
+			}                                               
+			c = *to;                                        
 			//c->mepc += 4;
 		break;
 		}
@@ -37,20 +42,22 @@ void __am_cte_init() {
   cte_init(ev_handler);
 }
 
-void rt_hw_context_switch_to(rt_ubase_t to) {
+void rt_hw_context_switch(rt_ubase_t from, rt_ubase_t to) {
 	rt_thread_t pcb = rt_thread_self();
 	rt_ubase_t temp_user_data = pcb->user_data;
-	pcb->user_data = to;
+	rt_ubase_t to_from[2] = {to, from};        
+	pcb->user_data = (rt_ubase_t)to_from;      
 	yield();
 	pcb->user_data = temp_user_data;
 }
 
-void rt_hw_context_switch(rt_ubase_t from, rt_ubase_t to) {
-	rt_thread_t pcb = rt_thread_self();
-	from = pcb->user_data;
+void rt_hw_context_switch_to(rt_ubase_t to) {
+/*	rt_thread_t pcb = rt_thread_self();
+	rt_ubase_t temp_user_data = pcb->user_data;
 	pcb->user_data = to;
 	yield();
-	pcb->user_data = from;
+	pcb->user_data = temp_user_data;*/
+	rt_hw_context_switch(0,to);
 }
 
 void rt_hw_context_switch_interrupt(void *context, rt_ubase_t from, rt_ubase_t to, struct rt_thread *to_thread) {
@@ -63,13 +70,13 @@ rt_uint8_t *rt_hw_stack_init(void *tentry, void *parameter, rt_uint8_t *stack_ad
 	/*new stack init*/
 	Area new_stack;
 	new_stack.end   = stack_addr;
-	new_stack.start = stack_addr - 0x8000;
+	new_stack.start = stack_addr - FINSH_THREAD_STACK_SIZE;
 	//printf("stack start is %x, end is %x\n", new_stack.start, new_stack.end);
 	/*new Context init and write in arg*/
 	Context *new_conp = kcontext(new_stack, fake_entry, (void *)(new_stack.end - sizeof(Context)));
 	/*read arg out*/
 	rt_ubase_t *arg_pointer = (rt_ubase_t *)(new_stack.end - sizeof(Context));
-	printf("context %x\n", sizeof(Context));
+	printf("context %d\n", sizeof(Context));
 	*arg_pointer = (rt_ubase_t)tentry;
 	arg_pointer--;
 	*arg_pointer = (rt_ubase_t)parameter;
